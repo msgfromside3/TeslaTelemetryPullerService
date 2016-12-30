@@ -1,0 +1,3 @@
+[submodule "TeslaLib_Submodule"]
+	path = TeslaLib_Submodule
+	url = https://github.com/razfriman/TeslaLib
