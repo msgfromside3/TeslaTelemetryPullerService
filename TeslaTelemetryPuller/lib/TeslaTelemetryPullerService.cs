@@ -29,12 +29,27 @@
 
         public void Run()
         {
-            if(!_isInitialized)
+            IsInitialized();
+
+            do
+            {
+
+            } while (!_shouldStop && !_shouldRunOnce);
+        }
+
+        public void Stop()
+        {
+            IsInitialized();
+
+            _shouldStop = true;
+        }
+
+        private void IsInitialized()
+        {
+            if (!_isInitialized)
             {
                 throw new InvalidOperationException("Not initialized.");
             }
-
-
         }
     }
 }
