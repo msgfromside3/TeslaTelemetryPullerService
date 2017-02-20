@@ -1,6 +1,7 @@
 ﻿namespace TeslaTelemetryPuller
 {
     using System;
+    using System.Configuration;
     using System.Threading;
     using System.Threading.Tasks;
 
@@ -27,6 +28,13 @@
             return config;
         }
 
+        private static void ParseAppConfig(ref TeslaTelemetryPullerServiceConfig config)
+        {
+            const string configKey = "TeslaApiClientInfoUrl";
+            var apiClientInfoUrl = ConfigurationManager.AppSettings[configKey];
+            config.AddConfig("configKey", apiClientInfoUrl);
+        }
+
         private static void ShowUsage()
         {
             Console.Out.WriteLine("Usage:\tTeslaTelemetryPuller.exe [-runonce]");
@@ -42,6 +50,8 @@
                 ShowUsage();
                 return -1;
             }
+
+            ParseAppConfig(ref config);
 
             var service = new TeslaTelemetryPullerService(config);
 
