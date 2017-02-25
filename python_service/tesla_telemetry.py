@@ -3,6 +3,7 @@ import time
 import teslajson
 import sys
 import datetime
+import os
 from azure.storage.table import TableService, Entity
 
 def log(connection, message):
@@ -51,36 +52,28 @@ for opt, arg in opts:
 	elif opt == '-l':
 		log_file = arg;
 
-connection_accesstoken = YOUR_ACCESS_TOKEN;
+connection_accesstoken = '1078dc08b85816009a8d8402b5e694f250ed6098f32dda038696dd0a3513a051';
 
-previous_latitude = 0;
-previous_longitude = 0;
-
-# 30 min
-max_sleep = 1800;
-
-# 5 second
-moving_sleep = 5;
-
-# 60 second
-stop_sleep = 60;
-
-# offline sleep
-offline_sleep = 300;
-
-# 3 min
-sleep_incremental = 180;
-
-sleep_time = stop_sleep;
+previous_odometer = 0;
 
 not_moving_count = 0;
 
-azure_table_service = TableService(account_name=YOUR_ACCOUNT_NAME, account_key=YOUR_KEY);
+azure_table_service = TableService(account_name='msgfromside3', account_key='Fg17YRv20Slplo5feUQmMZvoPsTDeK7/cJ8N9GC8Iul+CvEljQ+Hdf3nAkWhFSJwuVLStoUOsXw8WEaordLdvw==');
 
 shouldReconnect = 1;
 
+# update interval with the latest environ variables.
+default_sleep = 60;
+max_sleep = 1800;
+moving_sleep = 60;
+stop_sleep = 60;
+offline_sleep = 180;
+sleep_increment = 180;
+
+sleep_time = 0;
+
 while 1:
-	log(azure_table_service, "Starting a new session.");
+	log(azure_table_service, "Starting a new session. sleep={0}, shouldReconnect={1}, not_moving_count={2}".format(sleep_time, shouldReconnect, not_moving_count));
 
 	# Always get a new connection to get the updated vehicle state.
 	if (shouldReconnect == 1):
@@ -96,11 +89,7 @@ while 1:
 	record_tesla_power_state (azure_table_service, 'TeslaPowerState', vehicle_status['state']);
 	
 	if (vehicle_status['state'] != 'online'):
-		if (sleep_time != max_sleep):
-                        sleep_time += not_moving_count * sleep_incremental;
-                        not_moving_count += 1;
-                        if (sleep_time > max_sleep): sleep_time = max_sleep;
-		time.sleep(sleep_time);
+		time.sleep(offline_sleep);
 		shouldReconnect = 1;
 		continue;
 
@@ -111,9 +100,8 @@ while 1:
 		climate_state = tesla_data_request(connection, "climate_state");
 	except:
 		log(azure_table_service, "Failed to access Tesla data.");
+		shouldReconnect = 1;
 		time.sleep(default_sleep);
-		# Reconnect.
-		connection = teslajson.Connection(access_token = connection_token);
 		continue;
 	
 	# Store states to Azure Tables.
@@ -144,25 +132,31 @@ while 1:
 	climate_state['RowKey'] = str(climate_state['timestamp'] /1000 ); 
 	azure_table_service.insert_entity('TeslaClimateState', climate_state);
 
-	if ((previous_latitude != drive_state['latitude']) | (previous_longitude != drive_state['longitude'])): 
+	if (previous_odometer != vehicle_state['odometer']): 
 		# If moving
 		log(azure_table_service, "Moving detected");
 		print('{0},{1}\n'.format(time.strftime("%Y-%m-%d %H:%M:%S"), "Moving detected."));
 		sleep_time = moving_sleep;	
 		not_moving_count = 0;
-		previous_latitude = drive_state['latitude'];
-		previous_longitude = drive_state['longitude'];
+		previous_odometer = vehicle_state['odometer'];
 		shouldReconnect = 0;
 	else:
 		# If not moving.
 		log(azure_table_service, "Not moving.");
 		print('{0},{1}\n'.format(time.strftime("%Y-%m-%d %H:%M:%S"), "Not moving."));
-		if (not_moving_count == 0):
-			sleep_time = stop_sleep;
-		if (sleep_time < max_sleep):
-			sleep_time += not_moving_count * sleep_incremental;
-			not_moving_count += 1;
-			if (sleep_time > max_sleep): sleep_time = max_sleep;
+
+		# Check if the climate control is on. If so, the car is ready to move so start pinging more aggressively.
+		if (climate_state['is_climate_on'] == True):
+			log(azure_table_service, "Climate control is on.");
+			sleep_time = moving_sleep;
+		else: 
+			log(azure_table_service, "Climate control is off.");
+			if (not_moving_count == 0):
+				sleep_time = stop_sleep;
+			if (sleep_time < max_sleep):
+				sleep_time += not_moving_count * sleep_increment;
+				not_moving_count += 1;
+				if (sleep_time > max_sleep): sleep_time = max_sleep;
 		shouldReconnect = 1;
 	time.sleep(sleep_time);
 		
